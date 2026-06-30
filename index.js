@@ -2,7 +2,7 @@ const process = require('node:process');
 const { Client, GatewayIntentBits, Events } = require('discord.js');
 require('dotenv').config();
 
-const token = process.env.DISCORD_BOT_TOKEN;
+const token = process.env.MTUxMDMzMTkyMDI2MzY4MDE4Mw.Gd6KiC.H82FjMYGyqxJ62qRjh4FdEh-AxykXclq7Lt3-E;
 
 if (!token) {
   console.error('Missing DISCORD_BOT_TOKEN. Add it to a .env file or export it before running npm start.');
