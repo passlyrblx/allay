@@ -10,7 +10,7 @@ A small Discord bot starter built for Node.js 20 with JavaScript and `discord.js
    npm install
    ```
 
-2. Put your API keys in `.environment`:
+2. Create a local `.env` file, then put your real API keys in `.env`:
 
    ```env
    DISCORD_BOT_TOKEN=your_real_token_here
@@ -35,4 +35,4 @@ Logged in as allay
 
 ## Security note
 
-Do not commit real API keys or bot tokens. Keep secrets in your local `.environment` file only, and regenerate any token that was shared publicly or pasted into chat.
+Do not commit real API keys or bot tokens. Keep secrets in your local `.env` file only. The `.env` file is ignored by Git so it will not be visible to others when you push the repository. Regenerate any token that was shared publicly or pasted into chat.
