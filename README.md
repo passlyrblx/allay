@@ -10,19 +10,14 @@ A small Discord bot starter built for Node.js 20 with JavaScript and `discord.js
    npm install
    ```
 
-2. Create your local environment file:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-3. Put your Discord bot token in `.env`:
+2. Put your API keys in `.environment`:
 
    ```env
    DISCORD_BOT_TOKEN=your_real_token_here
+   GROQ_API_KEY=your_real_groq_key_here
    ```
 
-4. Start the bot:
+3. Start the bot:
 
    ```bash
    npm start
@@ -40,5 +35,4 @@ Logged in as allay
 
 ## Security note
 
-Do not commit your Discord bot token. Keep it in `.env`, which is ignored by Git.
-If a token was shared publicly or pasted into chat, regenerate it in the Discord Developer Portal before using it.
+Do not commit real API keys or bot tokens. Keep secrets in your local `.environment` file only, and regenerate any token that was shared publicly or pasted into chat.

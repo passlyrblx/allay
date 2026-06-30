@@ -5,13 +5,11 @@ const BOT_USER_ID = '1510331920263680183';
 const MEMORY_FILE = path.join(__dirname, 'chatmemory.json');
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
-// Add more keys here or set GROQ_API_KEYS="key1,key2" in your .env file.
-// Keeping the in-code list makes it easy to add backup keys that are tried in order.
+// Set GROQ_API_KEY in .environment, or set GROQ_API_KEYS="key1,key2" for backup keys.
 const GROQ_API_KEYS = [
   process.env.GROQ_API_KEY,
   ...(process.env.GROQ_API_KEYS ? process.env.GROQ_API_KEYS.split(',') : []),
-  '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',
-].filter(Boolean);
+].map((key) => key.trim()).filter(Boolean);
 
 const DEFAULT_MEMORY = {
   version: 1,
