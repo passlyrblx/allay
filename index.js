@@ -1,12 +1,13 @@
 const process = require('node:process');
+require('dotenv').config();
+
 const { Client, GatewayIntentBits, Events } = require('discord.js');
 const { handleAiMessage } = require('./ai');
-require('dotenv').config({ path: '.environment' });
 
 const token = process.env.DISCORD_BOT_TOKEN;
 
 if (!token) {
-  console.error('Missing DISCORD_BOT_TOKEN. Add it to .environment or export it before running npm start.');
+  console.error('Missing DISCORD_BOT_TOKEN. Add it to .env or export it before running npm start.');
   process.exit(1);
 }
 
