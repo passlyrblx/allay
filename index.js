@@ -1,8 +1,9 @@
 const process = require('node:process');
 const { Client, GatewayIntentBits, Events } = require('discord.js');
+const { handleAiMessage } = require('./ai');
 require('dotenv').config();
 
-const token = process.env.MTUxMDMzMTkyMDI2MzY4MDE4Mw.Gd6KiC.H82FjMYGyqxJ62qRjh4FdEh-AxykXclq7Lt3-E;
+const token = process.env.DISCORD_BOT_TOKEN;
 
 if (!token) {
   console.error('Missing DISCORD_BOT_TOKEN. Add it to a .env file or export it before running npm start.');
@@ -24,6 +25,9 @@ client.once(Events.ClientReady, (readyClient) => {
 
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
+
+  const aiHandled = await handleAiMessage(message);
+  if (aiHandled) return;
 
   const content = message.content.trim().toLowerCase();
 
