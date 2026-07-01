@@ -75,34 +75,59 @@ function pickWinners(giveaway) {
   return [...winners];
 }
 
+function giveawayStatus(giveaway) {
+  if (giveaway.cancelled) return 'Cancelled';
+  if (giveaway.ended) return 'Completed';
+  if (giveaway.started) return 'Started';
+  return 'Pending start';
+}
+
 function buildEmbed(giveaway) {
   const { entries: entryCount, users: uniqueCount } = getEntryStats(giveaway);
   const embed = new EmbedBuilder()
-    .setColor(giveaway.ended ? 0x808080 : 0x57f287)
+    .setColor(giveaway.ended || giveaway.cancelled ? 0xed4245 : 0x57f287)
     .setTitle(giveaway.title || 'Giveaway')
     .setDescription(giveaway.description || 'Press the button below to enter.')
     .addFields(
       { name: 'Prize', value: giveaway.prize, inline: true },
       { name: 'Winners', value: String(giveaway.winnerCount), inline: true },
-      { name: 'Ends', value: giveaway.ended ? 'Ended' : `<t:${Math.floor(new Date(giveaway.endAt).getTime() / 1000)}:R>`, inline: true },
-      { name: 'Entries', value: `${entryCount} total from ${uniqueCount} user(s)`, inline: true },
+      { name: 'Status', value: giveawayStatus(giveaway), inline: true },
+      { name: 'Ends', value: giveaway.ended || giveaway.cancelled ? giveawayStatus(giveaway) : `<t:${Math.floor(new Date(giveaway.endAt).getTime() / 1000)}:R>`, inline: true },
       { name: 'Message entries', value: giveaway.messageEntriesEnabled ? `1 per message in <#${giveaway.messageEntryChannelId || MESSAGE_ENTRY_CHANNEL_ID}> (3s cooldown)` : 'Off', inline: true },
     )
     .setFooter({ text: `Giveaway ID: ${giveaway.id}` })
     .setTimestamp(new Date(giveaway.endAt));
   if (giveaway.imageUrl) embed.setImage(giveaway.imageUrl);
-  if (giveaway.ended && giveaway.winners?.length) {
-    embed.addFields({ name: 'Winner(s)', value: giveaway.winners.map((id) => `<@${id}> with ${giveaway.entries?.[id] || 0} entr${(giveaway.entries?.[id] || 0) === 1 ? 'y' : 'ies'}`).join('\n') });
+  if (giveaway.ended) {
+    embed.addFields({ name: 'Entries', value: `${entryCount} total from ${uniqueCount} user(s)`, inline: true });
+    if (giveaway.winners?.length) {
+      embed.addFields({ name: 'Winner(s)', value: giveaway.winners.map((id) => `<@${id}> with ${giveaway.entries?.[id] || 0} entr${(giveaway.entries?.[id] || 0) === 1 ? 'y' : 'ies'}`).join('\n') });
+    }
   }
   return embed;
 }
 
 function buildRows(giveaway) {
+  if (giveaway.cancelled || giveaway.ended) {
+    return [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`giveaway:edit:${giveaway.id}`).setLabel('Edit').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`giveaway:reroll:${giveaway.id}`).setLabel('Reroll').setStyle(ButtonStyle.Secondary).setDisabled(giveaway.cancelled),
+    )];
+  }
+
+  if (!giveaway.started) {
+    return [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`giveaway:edit:${giveaway.id}`).setLabel('Edit').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`giveaway:cancel:${giveaway.id}`).setLabel('Cancel').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`giveaway:start:${giveaway.id}`).setLabel('Start').setStyle(ButtonStyle.Success),
+    )];
+  }
+
   return [new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`giveaway:enter:${giveaway.id}`).setLabel('Enter giveaway').setStyle(ButtonStyle.Success).setDisabled(giveaway.ended),
-    new ButtonBuilder().setCustomId(`giveaway:leave:${giveaway.id}`).setLabel('Leave').setStyle(ButtonStyle.Secondary).setDisabled(giveaway.ended),
+    new ButtonBuilder().setCustomId(`giveaway:enter:${giveaway.id}`).setLabel('Join').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`giveaway:leave:${giveaway.id}`).setLabel('Leave').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`giveaway:edit:${giveaway.id}`).setLabel('Edit').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`giveaway:end:${giveaway.id}`).setLabel('End').setStyle(ButtonStyle.Danger).setDisabled(giveaway.ended),
+    new ButtonBuilder().setCustomId(`giveaway:end:${giveaway.id}`).setLabel('End').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId(`giveaway:reroll:${giveaway.id}`).setLabel('Reroll').setStyle(ButtonStyle.Secondary),
   )];
 }
@@ -136,7 +161,7 @@ async function endGiveaway(id, reroll = false) {
 
 function schedule(giveaway) {
   clearTimeout(timers.get(giveaway.id));
-  if (giveaway.ended) return;
+  if (giveaway.ended || giveaway.cancelled || !giveaway.started) return;
   const delay = new Date(giveaway.endAt).getTime() - Date.now();
   if (delay <= 0) {
     timers.set(giveaway.id, setTimeout(() => endGiveaway(giveaway.id).catch(console.error), 1000));
@@ -152,9 +177,15 @@ async function initializeGiveaways(client) {
   clientRef = client;
   await loadStore();
   for (const giveaway of Object.values(store.giveaways)) {
-    if (!giveaway.ended && new Date(giveaway.endAt).getTime() <= Date.now()) endGiveaway(giveaway.id).catch(console.error);
+    if (giveaway.started === undefined) giveaway.started = !giveaway.ended && !giveaway.cancelled;
+    if (giveaway.cancelled === undefined) giveaway.cancelled = false;
+    if (!giveaway.durationMs && giveaway.createdAt && giveaway.endAt) {
+      giveaway.durationMs = Math.max(1000, new Date(giveaway.endAt).getTime() - new Date(giveaway.createdAt).getTime());
+    }
+    if (!giveaway.ended && giveaway.started && new Date(giveaway.endAt).getTime() <= Date.now()) endGiveaway(giveaway.id).catch(console.error);
     else schedule(giveaway);
   }
+  await saveStore();
   console.log(`[giveaway] Restored ${Object.keys(store.giveaways).length} giveaway(s).`);
 }
 
@@ -168,25 +199,28 @@ async function createGiveaway(interaction) {
     channelId: interaction.channelId,
     messageId: null,
     hostId: interaction.user.id,
+    createdAt: new Date().toISOString(),
     title: interaction.options.getString('title') || '🎉 Giveaway',
     prize: interaction.options.getString('prize', true),
     description: interaction.options.getString('description') || 'Press Enter giveaway to join. More entries improve your chance, but do not guarantee a win.',
     imageUrl: interaction.options.getAttachment('image')?.url || interaction.options.getString('image_url') || null,
     winnerCount: interaction.options.getInteger('winners') || 1,
+    durationMs,
     endAt: new Date(Date.now() + durationMs).toISOString(),
     entries: {},
     messageEntriesEnabled: interaction.options.getBoolean('message_entries') || false,
     messageEntryChannelId: MESSAGE_ENTRY_CHANNEL_ID,
     messageEntryCount: 1,
+    started: false,
     ended: false,
+    cancelled: false,
     winners: [],
   };
   const message = await interaction.channel.send({ embeds: [buildEmbed(giveaway)], components: buildRows(giveaway) });
   giveaway.messageId = message.id;
   store.giveaways[id] = giveaway;
   await saveStore();
-  schedule(giveaway);
-  return interaction.reply({ content: `Giveaway created. ID: ${id}. Ends in ${formatRemaining(giveaway.endAt)}.`, ephemeral: true });
+  return interaction.reply({ content: `Giveaway created. ID: ${id}. Use Start when you are ready to open entries.`, ephemeral: true });
 }
 
 async function handleGiveawayCommand(interaction) {
@@ -207,16 +241,38 @@ async function handleGiveawayButton(interaction) {
   const giveaway = store.giveaways[id];
   if (!giveaway) return interaction.reply({ content: 'Giveaway not found.', ephemeral: true });
   if (action === 'enter') {
-    giveaway.entries[interaction.user.id] = (giveaway.entries[interaction.user.id] || 0) + 1;
+    if (!giveaway.started || giveaway.ended || giveaway.cancelled) return interaction.reply({ content: 'This giveaway is not open for entries.', ephemeral: true });
+    if (giveaway.entries[interaction.user.id]) return interaction.reply({ content: 'You are already entered in this giveaway.', ephemeral: true });
+    giveaway.entries[interaction.user.id] = 1;
     await saveStore(); await refreshMessage(giveaway);
-    return interaction.reply({ content: `Entered! You now have ${giveaway.entries[interaction.user.id]} entr${giveaway.entries[interaction.user.id] === 1 ? 'y' : 'ies'}.`, ephemeral: true });
+    return interaction.reply({ content: 'Entered! You have 1 entry in this giveaway.', ephemeral: true });
   }
   if (action === 'leave') {
+    if (!giveaway.started || giveaway.ended || giveaway.cancelled) return interaction.reply({ content: 'This giveaway is not open for entries.', ephemeral: true });
     delete giveaway.entries[interaction.user.id];
     await saveStore(); await refreshMessage(giveaway);
     return interaction.reply({ content: 'You left this giveaway.', ephemeral: true });
   }
   if (!canEdit(interaction, giveaway)) return interaction.reply({ content: 'Only the host or server managers can edit this giveaway.', ephemeral: true });
+  if (action === 'start') {
+    if (giveaway.started) return interaction.reply({ content: 'Giveaway is already started.', ephemeral: true });
+    giveaway.started = true;
+    giveaway.cancelled = false;
+    giveaway.ended = false;
+    giveaway.endAt = new Date(Date.now() + Math.max(1000, giveaway.durationMs || (new Date(giveaway.endAt).getTime() - Date.now()))).toISOString();
+    await saveStore();
+    schedule(giveaway);
+    await refreshMessage(giveaway);
+    return interaction.reply({ content: `Giveaway started. Ends in ${formatRemaining(giveaway.endAt)}.`, ephemeral: true });
+  }
+  if (action === 'cancel') {
+    giveaway.cancelled = true;
+    giveaway.ended = true;
+    clearTimeout(timers.get(giveaway.id));
+    timers.delete(giveaway.id);
+    await saveStore(); await refreshMessage(giveaway);
+    return interaction.reply({ content: 'Giveaway cancelled.', ephemeral: true });
+  }
   if (action === 'end') return endGiveaway(id).then(() => interaction.reply({ content: 'Giveaway ended.', ephemeral: true }));
   if (action === 'reroll') return endGiveaway(id, true).then(() => interaction.reply({ content: 'Rerolled. Winner user IDs were posted.', ephemeral: true }));
   if (action === 'edit') {
@@ -259,7 +315,7 @@ async function handleMessageEntry(message) {
   let changed = false;
   for (const giveaway of Object.values(store.giveaways)) {
     const entryChannelId = giveaway.messageEntryChannelId || MESSAGE_ENTRY_CHANNEL_ID;
-    if (!giveaway.ended && giveaway.messageEntriesEnabled && entryChannelId === message.channelId && message.id !== giveaway.messageId) {
+    if (giveaway.started && !giveaway.ended && !giveaway.cancelled && giveaway.messageEntriesEnabled && entryChannelId === message.channelId && message.id !== giveaway.messageId) {
       giveaway.entries[message.author.id] = (giveaway.entries[message.author.id] || 0) + 1;
       giveaway.messageEntryChannelId = MESSAGE_ENTRY_CHANNEL_ID;
       giveaway.messageEntryCount = 1;
