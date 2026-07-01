@@ -1,0 +1,16 @@
+{
+  "discord": {
+    "botToken": "PASTE_DISCORD_BOT_TOKEN_HERE",
+    "clientId": "PASTE_DISCORD_CLIENT_ID_HERE",
+    "guildId": ""
+  },
+  "bot": {
+    "userId": "1510331920263680183"
+  },
+  "groq": {
+    "model": "llama-3.3-70b-versatile",
+    "apiKeys": [
+      "PASTE_GROQ_API_KEY_HERE"
+    ]
+  }
+}
