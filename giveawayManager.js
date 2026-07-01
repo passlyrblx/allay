@@ -272,4 +272,94 @@ async function handleMessageEntry(message) {
   }
 }
 
-module.exports = { initializeGiveaways, handleGiveawayCommand, handleGiveawayButton, handleGiveawayModal, handleMessageEntry };
+
+function parsePrefixArgs(content) {
+  const args = [];
+  const regex = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match;
+  while ((match = regex.exec(content))) args.push(match[1] ?? match[2] ?? match[3]);
+  return args;
+}
+
+function takeFlag(args, name, hasValue = true) {
+  const index = args.findIndex((arg) => arg.toLowerCase() === name);
+  if (index === -1) return hasValue ? null : false;
+  args.splice(index, 1);
+  if (!hasValue) return true;
+  const [value] = args.splice(index, 1);
+  return value || null;
+}
+
+function prefixOptions(values, subcommand) {
+  return {
+    getSubcommand: () => subcommand,
+    getString: (name, required = false) => {
+      const value = values[name] ?? null;
+      if (required && !value) throw new Error(`Missing required option: ${name}`);
+      return value;
+    },
+    getInteger: (name) => values[name] ? Number(values[name]) : null,
+    getBoolean: (name) => Boolean(values[name]),
+    getAttachment: () => null,
+  };
+}
+
+function buildPrefixInteraction(message, subcommand, values) {
+  return {
+    guildId: message.guildId,
+    channelId: message.channelId,
+    channel: message.channel,
+    user: message.author,
+    memberPermissions: message.member?.permissions,
+    options: prefixOptions(values, subcommand),
+    async reply(payload) {
+      const response = typeof payload === 'string' ? { content: payload } : payload;
+      return message.reply({ ...response, ephemeral: undefined });
+    },
+  };
+}
+
+async function handleGiveawayPrefixCommand(message) {
+  const content = message.content.trim();
+  let subcommand;
+  let rest;
+  if (/^\.?g\.create(\s|$)/i.test(content)) { subcommand = 'create'; rest = content.replace(/^\.?g\.create/i, '').trim(); }
+  else if (/^\.?g\.end(\s|$)/i.test(content)) { subcommand = 'end'; rest = content.replace(/^\.?g\.end/i, '').trim(); }
+  else if (/^\.?g\.reroll(\s|$)/i.test(content)) { subcommand = 'reroll'; rest = content.replace(/^\.?g\.reroll/i, '').trim(); }
+  else if (/^\.g create(\s|$)/i.test(content)) { subcommand = 'create'; rest = content.replace(/^\.g create/i, '').trim(); }
+  else if (/^\.g end(\s|$)/i.test(content)) { subcommand = 'end'; rest = content.replace(/^\.g end/i, '').trim(); }
+  else if (/^\.g reroll(\s|$)/i.test(content)) { subcommand = 'reroll'; rest = content.replace(/^\.g reroll/i, '').trim(); }
+  else return false;
+
+  if (!message.member?.permissions?.has('ManageGuild')) {
+    await message.reply('You need the Manage Server permission to use giveaway commands.');
+    return true;
+  }
+
+  const args = parsePrefixArgs(rest);
+  const values = {};
+  if (subcommand === 'create') {
+    values.winners = takeFlag(args, '--winners') || takeFlag(args, '-w');
+    values.title = takeFlag(args, '--title');
+    values.description = takeFlag(args, '--description') || takeFlag(args, '--desc');
+    values.image_url = takeFlag(args, '--image') || takeFlag(args, '--image-url');
+    values.message_entries = takeFlag(args, '--message-entries', false) || takeFlag(args, '--messages', false);
+    values.duration = args.shift();
+    values.prize = args.join(' ');
+    if (!values.duration || !values.prize) {
+      await message.reply('Usage: `g.create <duration> <prize> [--winners 1] [--title "Title"] [--description "Description"] [--image URL] [--message-entries]`');
+      return true;
+    }
+  } else {
+    values.id = args[0];
+    if (!values.id) {
+      await message.reply(`Usage: \`g.${subcommand} <giveaway_id>\``);
+      return true;
+    }
+  }
+
+  await handleGiveawayCommand(buildPrefixInteraction(message, subcommand, values));
+  return true;
+}
+
+module.exports = { initializeGiveaways, handleGiveawayCommand, handleGiveawayButton, handleGiveawayModal, handleMessageEntry, handleGiveawayPrefixCommand };
