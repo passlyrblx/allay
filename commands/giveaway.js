@@ -14,9 +14,9 @@ module.exports = {
       .addIntegerOption((option) => option.setName('winners').setDescription('Number of winners.').setMinValue(1).setMaxValue(25))
       .addStringOption((option) => option.setName('title').setDescription('Giveaway embed title.'))
       .addStringOption((option) => option.setName('description').setDescription('Giveaway embed description.'))
-      .addStringOption((option) => option.setName('image').setDescription('Image URL for the giveaway embed.'))
-      .addBooleanOption((option) => option.setName('message_entries').setDescription('Let messages in this channel add entries.'))
-      .addIntegerOption((option) => option.setName('entries_per_message').setDescription('Entries added per message.').setMinValue(1).setMaxValue(25)))
+      .addAttachmentOption((option) => option.setName('image').setDescription('Upload an optional image for the giveaway embed.'))
+      .addStringOption((option) => option.setName('image_url').setDescription('Optional image URL, if you prefer pasting one.'))
+      .addBooleanOption((option) => option.setName('message_entries').setDescription('Count messages in channel 1480233618696572958 as entries.')))
     .addSubcommand((sub) => sub
       .setName('end')
       .setDescription('End a giveaway immediately by ID.')
