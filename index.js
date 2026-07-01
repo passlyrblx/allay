@@ -50,7 +50,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return handleGiveawayButton(interaction);
     }
 
-    if (interaction.isModalSubmit() && interaction.customId.startsWith('giveaway:modal:')) {
+    if (interaction.isModalSubmit() && (interaction.customId.startsWith('giveaway:modal:') || interaction.customId.startsWith('giveaway:boostmodal:'))) {
       return handleGiveawayModal(interaction);
     }
   } catch (error) {

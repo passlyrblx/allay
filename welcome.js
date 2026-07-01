@@ -1,10 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {
-  ActionRowBuilder,
   AttachmentBuilder,
-  ButtonBuilder,
-  ButtonStyle,
+  EmbedBuilder,
 } = require('discord.js');
 
 const WELCOME_CHANNEL_ID = '1480950317871796326';
@@ -51,33 +49,33 @@ function createGifAttachment(fileName) {
   return new AttachmentBuilder(filePath, { name: fileName });
 }
 
-function createWelcomeButtons(guildId) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setLabel('Rules')
-      .setEmoji('📜')
-      .setStyle(ButtonStyle.Link)
-      .setURL(`https://discord.com/channels/${guildId}/${RULES_CHANNEL_ID}`),
-    new ButtonBuilder()
-      .setLabel('Self Roles')
-      .setEmoji('✨')
-      .setStyle(ButtonStyle.Link)
-      .setURL(`https://discord.com/channels/${guildId}/${SELF_ROLES_CHANNEL_ID}`),
-  );
-}
-
-function createWelcomeContent(member, joinNumber, hasRejoined) {
+function createWelcomeEmbed(member, joinNumber, hasRejoined, gifName, hasAttachment) {
   const mention = `<@${member.id}>`;
-  const lines = [
-    `Welcome ${mention}! You are our #${joinNumber} member — we are happy to have you here.`,
+  const title = hasRejoined ? 'Welcome back to Allay!' : 'Welcome to Allay!';
+  const description = [
+    `${mention}, we are happy to have you here.`,
+    `You are member **#${joinNumber}**.`,
+    '',
+    `Please read the rules in <#${RULES_CHANNEL_ID}> and pick your self roles in <#${SELF_ROLES_CHANNEL_ID}>.`,
   ];
 
   if (hasRejoined) {
-    lines.push('Thanks for rejoining!');
+    description.splice(2, 0, 'Thanks for rejoining — glad to see you again!');
   }
 
-  return lines.join('\n');
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle(title)
+    .setDescription(description.join('\n'))
+    .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
+    .setFooter({ text: member.guild.name })
+    .setTimestamp();
+
+  if (hasAttachment) embed.setImage(`attachment://${gifName}`);
+
+  return embed;
 }
+
 
 async function handleWelcomeMember(member) {
   const channel = await member.client.channels.fetch(WELCOME_CHANNEL_ID).catch((error) => {
@@ -101,8 +99,7 @@ async function handleWelcomeMember(member) {
   }
 
   const payload = {
-    content: createWelcomeContent(member, member.guild.memberCount, hasRejoined),
-    components: [createWelcomeButtons(member.guild.id)],
+    embeds: [createWelcomeEmbed(member, member.guild.memberCount, hasRejoined, gifName, Boolean(attachment))],
   };
 
   if (attachment) {
