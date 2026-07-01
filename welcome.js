@@ -8,6 +8,8 @@ const {
 const WELCOME_CHANNEL_ID = '1480950317871796326';
 const RULES_CHANNEL_ID = '1480230068054659233';
 const SELF_ROLES_CHANNEL_ID = '1503707149837013093';
+const LEAVE_CHANNEL_ID = '1497091621290901590';
+const JOIN_ROLE_ID = '1480944751439253615';
 
 const DATA_DIR = path.join(__dirname, 'data');
 const SEEN_MEMBERS_FILE = path.join(DATA_DIR, 'welcomeSeenMembers.json');
@@ -49,6 +51,61 @@ function createGifAttachment(fileName) {
   return new AttachmentBuilder(filePath, { name: fileName });
 }
 
+function formatDuration(milliseconds) {
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return 'less than 1 minute';
+
+  const units = [
+    ['year', 365 * 24 * 60 * 60 * 1000],
+    ['month', 30 * 24 * 60 * 60 * 1000],
+    ['day', 24 * 60 * 60 * 1000],
+    ['hour', 60 * 60 * 1000],
+    ['minute', 60 * 1000],
+  ];
+  const parts = [];
+  let remaining = milliseconds;
+
+  for (const [unit, unitMilliseconds] of units) {
+    const value = Math.floor(remaining / unitMilliseconds);
+    if (value > 0) {
+      parts.push(`${value} ${unit}${value === 1 ? '' : 's'}`);
+      remaining -= value * unitMilliseconds;
+    }
+
+    if (parts.length === 2) break;
+  }
+
+  return parts.length ? parts.join(' ') : 'less than 1 minute';
+}
+
+function getMemberRoleMentions(member) {
+  const roles = member.roles.cache
+    .filter((role) => role.id !== member.guild.id)
+    .sort((first, second) => second.position - first.position)
+    .map((role) => `<@&${role.id}>`);
+
+  return roles.length ? roles.join(', ') : 'No roles';
+}
+
+async function fetchTextChannel(client, channelId, label) {
+  const channel = await client.channels.fetch(channelId).catch((error) => {
+    console.error(`Failed to fetch ${label} channel:`, error);
+    return null;
+  });
+
+  if (!channel || !channel.isTextBased?.()) {
+    console.error(`${label} channel ${channelId} is not text-based or could not be found.`);
+    return null;
+  }
+
+  return channel;
+}
+
+async function assignJoinRole(member) {
+  await member.roles.add(JOIN_ROLE_ID).catch((error) => {
+    console.error(`Failed to assign join role ${JOIN_ROLE_ID} to ${member.user.tag}:`, error);
+  });
+}
+
 function createWelcomeEmbed(member, joinNumber, hasRejoined, gifName, hasAttachment) {
   const mention = `<@${member.id}>`;
   const title = hasRejoined ? 'Welcome back to Allay!' : 'Welcome to Allay!';
@@ -78,15 +135,10 @@ function createWelcomeEmbed(member, joinNumber, hasRejoined, gifName, hasAttachm
 
 
 async function handleWelcomeMember(member) {
-  const channel = await member.client.channels.fetch(WELCOME_CHANNEL_ID).catch((error) => {
-    console.error('Failed to fetch welcome channel:', error);
-    return null;
-  });
+  await assignJoinRole(member);
 
-  if (!channel || !channel.isTextBased?.()) {
-    console.error(`Welcome channel ${WELCOME_CHANNEL_ID} is not text-based or could not be found.`);
-    return;
-  }
+  const channel = await fetchTextChannel(member.client, WELCOME_CHANNEL_ID, 'Welcome');
+  if (!channel) return;
 
   const seenMembers = readSeenMembers();
   const hasRejoined = seenMembers.has(member.id);
@@ -111,4 +163,31 @@ async function handleWelcomeMember(member) {
   await channel.send(payload);
 }
 
-module.exports = { handleWelcomeMember };
+function createLeaveEmbed(member) {
+  const joinedTimestamp = member.joinedTimestamp;
+  const duration = joinedTimestamp ? formatDuration(Date.now() - joinedTimestamp) : 'Unknown duration';
+
+  return new EmbedBuilder()
+    .setColor(0xed4245)
+    .setTitle('Member left Allay')
+    .setDescription([
+      `<@${member.id}> left the server.`,
+      `**Roles:** ${getMemberRoleMentions(member)}`,
+      `**Time in server:** ${duration}`,
+    ].join('\n'))
+    .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
+    .setFooter({ text: member.guild.name })
+    .setTimestamp();
+}
+
+async function handleLeaveMember(member) {
+  const channel = await fetchTextChannel(member.client, LEAVE_CHANNEL_ID, 'Leave');
+  if (!channel) return;
+
+  await channel.send({
+    content: `<@${member.id}> left the server.`,
+    embeds: [createLeaveEmbed(member)],
+  });
+}
+
+module.exports = { handleLeaveMember, handleWelcomeMember };

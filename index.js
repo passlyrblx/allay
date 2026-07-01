@@ -4,7 +4,7 @@ const { Client, GatewayIntentBits, Events } = require('discord.js');
 const { config } = require('./config');
 const { handleAiMessage } = require('./ai');
 const { loadCommands, registerCommands } = require('./commandLoader');
-const { handleWelcomeMember } = require('./welcome');
+const { handleLeaveMember, handleWelcomeMember } = require('./welcome');
 const {
   handleGiveawayButton,
   handleGiveawayModal,
@@ -79,6 +79,14 @@ client.on(Events.GuildMemberAdd, async (member) => {
     await handleWelcomeMember(member);
   } catch (error) {
     console.error('Failed to send welcome message:', error);
+  }
+});
+
+client.on(Events.GuildMemberRemove, async (member) => {
+  try {
+    await handleLeaveMember(member);
+  } catch (error) {
+    console.error('Failed to send leave message:', error);
   }
 });
 
