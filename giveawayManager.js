@@ -54,82 +54,77 @@ function saveStore() {
   return writeQueue;
 }
 
+function formatEntryCount(value) {
+  const number = Number(value) || 0;
+  return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/\.?0+$/, '');
+}
+
 function getEntryStats(giveaway) {
-  const entries = Object.values(giveaway.entries || {}).reduce((sum, n) => sum + n, 0);
+  const entries = Object.values(giveaway.entries || {}).reduce((sum, n) => sum + (Number(n) || 0), 0);
   const users = Object.keys(giveaway.entries || {}).length;
   return { entries, users };
 }
 
-function weightedPool(giveaway) {
-  return Object.entries(giveaway.entries || {}).flatMap(([userId, count]) => Array(Math.max(0, count)).fill(userId));
-}
-
 function pickWinners(giveaway) {
-  const pool = weightedPool(giveaway);
+  const weights = Object.entries(giveaway.entries || {})
+    .map(([userId, count]) => [userId, Math.max(0, Number(count) || 0)])
+    .filter(([, count]) => count > 0);
   const winners = new Set();
-  while (pool.length && winners.size < giveaway.winnerCount) {
-    const [picked] = pool.splice(Math.floor(Math.random() * pool.length), 1);
+  while (weights.length && winners.size < giveaway.winnerCount) {
+    const total = weights.reduce((sum, [, count]) => sum + count, 0);
+    let roll = Math.random() * total;
+    const index = weights.findIndex(([, count]) => {
+      roll -= count;
+      return roll <= 0;
+    });
+    const [picked] = weights.splice(index === -1 ? weights.length - 1 : index, 1)[0];
     winners.add(picked);
-    for (let i = pool.length - 1; i >= 0; i -= 1) if (pool[i] === picked) pool.splice(i, 1);
   }
   return [...winners];
 }
 
-function giveawayStatus(giveaway) {
-  if (giveaway.cancelled) return 'Cancelled';
-  if (giveaway.ended) return 'Completed';
-  if (giveaway.started) return 'Started';
-  return 'Pending start';
+function getMemberEntryMultiplier(member, giveaway) {
+  const roleMultipliers = giveaway.roleMultipliers || {};
+  const roleIds = member?.roles?.cache ? [...member.roles.cache.keys()] : [];
+  return roleIds.reduce((best, roleId) => Math.max(best, Number(roleMultipliers[roleId]) || 1), 1);
 }
 
 function buildEmbed(giveaway) {
-  const { entries: entryCount, users: uniqueCount } = getEntryStats(giveaway);
+  const { entries: entryCount } = getEntryStats(giveaway);
   const embed = new EmbedBuilder()
-    .setColor(giveaway.ended || giveaway.cancelled ? 0xed4245 : 0x57f287)
+    .setColor(giveaway.ended || giveaway.cancelled ? 0x2b2d31 : 0x5865f2)
     .setTitle(giveaway.title || 'Giveaway')
-    .setDescription(giveaway.description || 'Press the button below to enter.')
-    .addFields(
-      { name: 'Prize', value: giveaway.prize, inline: true },
-      { name: 'Winners', value: String(giveaway.winnerCount), inline: true },
-      { name: 'Status', value: giveawayStatus(giveaway), inline: true },
-      { name: 'Ends', value: giveaway.ended || giveaway.cancelled ? giveawayStatus(giveaway) : `<t:${Math.floor(new Date(giveaway.endAt).getTime() / 1000)}:R>`, inline: true },
-      { name: 'Message entries', value: giveaway.messageEntriesEnabled ? `1 per message in <#${giveaway.messageEntryChannelId || MESSAGE_ENTRY_CHANNEL_ID}> (3s cooldown)` : 'Off', inline: true },
-    )
-    .setFooter({ text: `Giveaway ID: ${giveaway.id}` })
-    .setTimestamp(new Date(giveaway.endAt));
+    .setDescription(giveaway.description || 'Press Join to enter.')
+    .addFields({ name: 'Entries', value: `**${formatEntryCount(entryCount)}**`, inline: true })
+    .setFooter({ text: `Giveaway ID: ${giveaway.id}` });
   if (giveaway.imageUrl) embed.setImage(giveaway.imageUrl);
-  if (giveaway.ended) {
-    embed.addFields({ name: 'Entries', value: `${entryCount} total from ${uniqueCount} user(s)`, inline: true });
-    if (giveaway.winners?.length) {
-      embed.addFields({ name: 'Winner(s)', value: giveaway.winners.map((id) => `<@${id}> with ${giveaway.entries?.[id] || 0} entr${(giveaway.entries?.[id] || 0) === 1 ? 'y' : 'ies'}`).join('\n') });
-    }
-  }
   return embed;
 }
 
 function buildRows(giveaway) {
-  if (giveaway.cancelled || giveaway.ended) {
-    return [new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`giveaway:edit:${giveaway.id}`).setLabel('Edit').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId(`giveaway:reroll:${giveaway.id}`).setLabel('Reroll').setStyle(ButtonStyle.Secondary).setDisabled(giveaway.cancelled),
-    )];
-  }
+  if (giveaway.cancelled || giveaway.ended) return [];
 
   if (!giveaway.started) {
     return [new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`giveaway:edit:${giveaway.id}`).setLabel('Edit').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`giveaway:boost:${giveaway.id}`).setLabel('Role boost').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`giveaway:cancel:${giveaway.id}`).setLabel('Cancel').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(`giveaway:start:${giveaway.id}`).setLabel('Start').setStyle(ButtonStyle.Success),
     )];
   }
 
-  return [new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`giveaway:enter:${giveaway.id}`).setLabel('Join').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`giveaway:leave:${giveaway.id}`).setLabel('Leave').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`giveaway:edit:${giveaway.id}`).setLabel('Edit').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`giveaway:end:${giveaway.id}`).setLabel('End').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId(`giveaway:reroll:${giveaway.id}`).setLabel('Reroll').setStyle(ButtonStyle.Secondary),
-  )];
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`giveaway:enter:${giveaway.id}`).setLabel('Join').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`giveaway:leave:${giveaway.id}`).setLabel('Leave').setStyle(ButtonStyle.Secondary),
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`giveaway:edit:${giveaway.id}`).setLabel('Edit').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`giveaway:boost:${giveaway.id}`).setLabel('Role boost').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`giveaway:end:${giveaway.id}`).setLabel('End').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`giveaway:reroll:${giveaway.id}`).setLabel('Reroll').setStyle(ButtonStyle.Secondary),
+    ),
+  ];
 }
 
 async function refreshMessage(giveaway) {
@@ -152,8 +147,8 @@ async function endGiveaway(id, reroll = false) {
   if (channel) {
     const { entries, users } = getEntryStats(giveaway);
     const text = giveaway.winners.length
-      ? `🎉 ${reroll ? 'Rerolled' : 'Giveaway ended'} for **${giveaway.prize}**! ${users} user${users === 1 ? '' : 's'} participated with ${entries} total entr${entries === 1 ? 'y' : 'ies'}. ${giveaway.winners.map((id) => `<@${id}> won with ${giveaway.entries?.[id] || 0} entr${(giveaway.entries?.[id] || 0) === 1 ? 'y' : 'ies'}`).join('; ')}.`
-      : `Giveaway for **${giveaway.prize}** ended with ${users} user${users === 1 ? '' : 's'} participated and ${entries} total entr${entries === 1 ? 'y' : 'ies'}, but no valid winner could be picked.`;
+      ? `🎉 ${reroll ? 'Rerolled' : 'Giveaway ended'} for **${giveaway.prize}**! ${users} user${users === 1 ? '' : 's'} participated with ${formatEntryCount(entries)} total entries. ${giveaway.winners.map((id) => `<@${id}> won with ${formatEntryCount(giveaway.entries?.[id] || 0)} entries`).join('; ')}.`
+      : `Giveaway for **${giveaway.prize}** ended with ${users} user${users === 1 ? '' : 's'} participated and ${formatEntryCount(entries)} total entries, but no valid winner could be picked.`;
     await channel.send({ content: text, allowedMentions: { users: giveaway.winners } }).catch(console.error);
   }
   return giveaway;
@@ -182,6 +177,7 @@ async function initializeGiveaways(client) {
     if (!giveaway.durationMs && giveaway.createdAt && giveaway.endAt) {
       giveaway.durationMs = Math.max(1000, new Date(giveaway.endAt).getTime() - new Date(giveaway.createdAt).getTime());
     }
+    if (!giveaway.roleMultipliers) giveaway.roleMultipliers = {};
     if (!giveaway.ended && giveaway.started && new Date(giveaway.endAt).getTime() <= Date.now()) endGiveaway(giveaway.id).catch(console.error);
     else schedule(giveaway);
   }
@@ -202,7 +198,7 @@ async function createGiveaway(interaction) {
     createdAt: new Date().toISOString(),
     title: interaction.options.getString('title') || '🎉 Giveaway',
     prize: interaction.options.getString('prize', true),
-    description: interaction.options.getString('description') || 'Press Enter giveaway to join. More entries improve your chance, but do not guarantee a win.',
+    description: interaction.options.getString('description') || 'Press Join to enter.',
     imageUrl: interaction.options.getAttachment('image')?.url || interaction.options.getString('image_url') || null,
     winnerCount: interaction.options.getInteger('winners') || 1,
     durationMs,
@@ -211,6 +207,7 @@ async function createGiveaway(interaction) {
     messageEntriesEnabled: interaction.options.getBoolean('message_entries') || false,
     messageEntryChannelId: MESSAGE_ENTRY_CHANNEL_ID,
     messageEntryCount: 1,
+    roleMultipliers: {},
     started: false,
     ended: false,
     cancelled: false,
@@ -243,9 +240,9 @@ async function handleGiveawayButton(interaction) {
   if (action === 'enter') {
     if (!giveaway.started || giveaway.ended || giveaway.cancelled) return interaction.reply({ content: 'This giveaway is not open for entries.', ephemeral: true });
     if (giveaway.entries[interaction.user.id]) return interaction.reply({ content: 'You are already entered in this giveaway.', ephemeral: true });
-    giveaway.entries[interaction.user.id] = 1;
+    giveaway.entries[interaction.user.id] = getMemberEntryMultiplier(interaction.member, giveaway);
     await saveStore(); await refreshMessage(giveaway);
-    return interaction.reply({ content: 'Entered! You have 1 entry in this giveaway.', ephemeral: true });
+    return interaction.reply({ content: `Entered! You have ${formatEntryCount(giveaway.entries[interaction.user.id])} entry${giveaway.entries[interaction.user.id] === 1 ? '' : 'ies'} in this giveaway.`, ephemeral: true });
   }
   if (action === 'leave') {
     if (!giveaway.started || giveaway.ended || giveaway.cancelled) return interaction.reply({ content: 'This giveaway is not open for entries.', ephemeral: true });
@@ -275,6 +272,14 @@ async function handleGiveawayButton(interaction) {
   }
   if (action === 'end') return endGiveaway(id).then(() => interaction.reply({ content: 'Giveaway ended.', ephemeral: true }));
   if (action === 'reroll') return endGiveaway(id, true).then(() => interaction.reply({ content: 'Rerolled. Winner user IDs were posted.', ephemeral: true }));
+  if (action === 'boost') {
+    const modal = new ModalBuilder().setCustomId(`giveaway:boostmodal:${id}`).setTitle('Role entry boost');
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('roleId').setLabel('Role ID').setStyle(TextInputStyle.Short).setRequired(true)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('multiplier').setLabel('Multiplier (2x, 3x, 1.1x)').setStyle(TextInputStyle.Short).setRequired(true).setValue('2x')),
+    );
+    return interaction.showModal(modal);
+  }
   if (action === 'edit') {
     const modal = new ModalBuilder().setCustomId(`giveaway:modal:${id}`).setTitle('Edit giveaway');
     modal.addComponents(
@@ -289,10 +294,20 @@ async function handleGiveawayButton(interaction) {
 }
 
 async function handleGiveawayModal(interaction) {
-  const [, , id] = interaction.customId.split(':');
+  const [, modalType, id] = interaction.customId.split(':');
   const giveaway = store.giveaways[id];
   if (!giveaway) return interaction.reply({ content: 'Giveaway not found.', ephemeral: true });
   if (!canEdit(interaction, giveaway)) return interaction.reply({ content: 'You cannot edit this giveaway.', ephemeral: true });
+  if (modalType === 'boostmodal') {
+    const roleId = interaction.fields.getTextInputValue('roleId').replace(/[<@&>]/g, '').trim();
+    const multiplier = Number(interaction.fields.getTextInputValue('multiplier').toLowerCase().replace('x', '').trim());
+    if (!/^\d{10,}$/.test(roleId) || !Number.isFinite(multiplier) || multiplier <= 0) {
+      return interaction.reply({ content: 'Use a valid role ID and a multiplier like 2x, 3x, or 1.1x.', ephemeral: true });
+    }
+    giveaway.roleMultipliers = { ...(giveaway.roleMultipliers || {}), [roleId]: multiplier };
+    await saveStore(); await refreshMessage(giveaway);
+    return interaction.reply({ content: 'Role boost saved.', ephemeral: true });
+  }
   for (const key of ['title', 'prize', 'description', 'imageUrl']) {
     const value = interaction.fields.getTextInputValue(key)?.trim();
     if (value || key === 'imageUrl') giveaway[key === 'imageUrl' ? 'imageUrl' : key] = value || null;
@@ -312,19 +327,20 @@ async function handleMessageEntry(message) {
   const cooldownKey = `${message.guildId}:${message.channelId}:${message.author.id}`;
   if ((messageEntryCooldowns.get(cooldownKey) || 0) > now) return;
 
-  let changed = false;
+  const changedGiveaways = [];
   for (const giveaway of Object.values(store.giveaways)) {
     const entryChannelId = giveaway.messageEntryChannelId || MESSAGE_ENTRY_CHANNEL_ID;
     if (giveaway.started && !giveaway.ended && !giveaway.cancelled && giveaway.messageEntriesEnabled && entryChannelId === message.channelId && message.id !== giveaway.messageId) {
-      giveaway.entries[message.author.id] = (giveaway.entries[message.author.id] || 0) + 1;
+      giveaway.entries[message.author.id] = (giveaway.entries[message.author.id] || 0) + getMemberEntryMultiplier(message.member, giveaway);
       giveaway.messageEntryChannelId = MESSAGE_ENTRY_CHANNEL_ID;
       giveaway.messageEntryCount = 1;
-      changed = true;
+      changedGiveaways.push(giveaway);
     }
   }
-  if (changed) {
+  if (changedGiveaways.length) {
     messageEntryCooldowns.set(cooldownKey, now + MESSAGE_ENTRY_COOLDOWN_MS);
     await saveStore();
+    await Promise.all(changedGiveaways.map((giveaway) => refreshMessage(giveaway).catch(console.error)));
   }
 }
 
