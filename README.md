@@ -10,12 +10,29 @@ A small Discord bot starter built for Node.js 20 with JavaScript and `discord.js
    npm install
    ```
 
-2. Create a local `.env` file, then put your real API keys in `.env`:
+2. Open `config.json`, then put your real Discord and Groq details there:
 
-   ```env
-   DISCORD_BOT_TOKEN=your_real_token_here
-   GROQ_API_KEY=your_real_groq_key_here
+   ```json
+   {
+     "discord": {
+       "botToken": "your_real_token_here",
+       "clientId": "your_discord_application_client_id_here",
+       "guildId": "optional_test_server_id_here"
+     },
+     "bot": {
+       "userId": "your_bot_user_id_here"
+     },
+     "groq": {
+       "model": "llama-3.3-70b-versatile",
+       "apiKeys": [
+         "your_real_groq_key_here",
+         "optional_backup_groq_key_here"
+       ]
+     }
+   }
    ```
+
+   Leave `discord.guildId` empty (`""`) if you want slash commands deployed globally.
 
 3. Start the bot:
 
@@ -35,4 +52,4 @@ Logged in as allay
 
 ## Security note
 
-Do not commit real API keys or bot tokens. Keep secrets in your local `.env` file only. The `.env` file is ignored by Git so it will not be visible to others when you push the repository. Regenerate any token that was shared publicly or pasted into chat.
+Do not commit real API keys or bot tokens. `config.json` is included as a template, so keep real production secrets private when sharing the repository. Regenerate any token that was shared publicly or pasted into chat.

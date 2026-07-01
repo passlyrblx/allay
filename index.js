@@ -1,6 +1,7 @@
 const process = require('node:process');
 
 const { Client, GatewayIntentBits, Events } = require('discord.js');
+const { config } = require('./config');
 const { handleAiMessage } = require('./ai');
 const { loadCommands } = require('./commandLoader');
 const {
@@ -10,10 +11,10 @@ const {
   initializeGiveaways,
 } = require('./giveawayManager');
 
-const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || 'PASTE_DISCORD_BOT_TOKEN_HERE';
+const DISCORD_BOT_TOKEN = config.discord.botToken;
 
-if (!DISCORD_BOT_TOKEN || DISCORD_BOT_TOKEN === 'PASTE_DISCORD_BOT_TOKEN_HERE') {
-  console.error('Missing Discord bot token. Set DISCORD_BOT_TOKEN before running npm start.');
+if (!DISCORD_BOT_TOKEN) {
+  console.error('Missing Discord bot token. Add discord.botToken to config.json before running npm start.');
   process.exit(1);
 }
 

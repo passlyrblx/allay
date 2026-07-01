@@ -1,12 +1,11 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { config } = require('./config');
 
-const BOT_USER_ID = '1510331920263680183';
+const BOT_USER_ID = config.bot.userId;
 const MEMORY_FILE = path.join(__dirname, 'chatmemory.json');
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
-const GROQ_API_KEYS = [
-  'PASTE_GROQ_API_KEY_HERE',
-].filter((key) => key && !key.startsWith('PASTE_')).map((key) => key.trim());
+const GROQ_MODEL = config.groq.model;
+const GROQ_API_KEYS = config.groq.apiKeys;
 
 const DEFAULT_MEMORY = {
   version: 1,
