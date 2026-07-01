@@ -3,12 +3,13 @@ const process = require('node:process');
 const { Client, GatewayIntentBits, Events } = require('discord.js');
 const { config } = require('./config');
 const { handleAiMessage } = require('./ai');
-const { loadCommands } = require('./commandLoader');
+const { loadCommands, registerCommands } = require('./commandLoader');
 const { handleWelcomeMember } = require('./welcome');
 const {
   handleGiveawayButton,
   handleGiveawayModal,
   handleMessageEntry,
+  handleGiveawayPrefixCommand,
   initializeGiveaways,
 } = require('./giveawayManager');
 
@@ -33,6 +34,7 @@ client.commands = loadCommands();
 client.once(Events.ClientReady, async (readyClient) => {
   console.log('Logged in as allay');
   console.log(`Discord account: ${readyClient.user.tag}`);
+  await registerCommands(client.commands, readyClient.application.id).catch((error) => console.error('[deploy] Startup slash command registration failed:', error));
   await initializeGiveaways(readyClient);
 });
 
@@ -59,6 +61,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+
+async function handlePrefixMessage(message) {
+  const content = message.content.trim();
+  if (content.toLowerCase() === '.help') {
+    const command = client.commands.get('help');
+    if (!command?.executePrefix) return false;
+    await command.executePrefix(message, client.commands);
+    return true;
+  }
+
+  return handleGiveawayPrefixCommand(message);
+}
+
 client.on(Events.GuildMemberAdd, async (member) => {
   try {
     await handleWelcomeMember(member);
@@ -71,6 +86,9 @@ client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
   await handleMessageEntry(message);
+
+  const prefixHandled = await handlePrefixMessage(message);
+  if (prefixHandled) return;
 
   const aiHandled = await handleAiMessage(message);
   if (aiHandled) return;

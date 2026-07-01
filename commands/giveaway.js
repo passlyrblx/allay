@@ -25,6 +25,12 @@ module.exports = {
       .setName('reroll')
       .setDescription('Reroll giveaway winners and post winner user IDs.')
       .addStringOption((option) => option.setName('id').setDescription('Giveaway ID from the embed footer.').setRequired(true))),
+  prefixUsage: [
+    'g.create <duration> <prize> [--winners 1] [--title \"Title\"] [--description \"Description\"]',
+    '.g.create <duration> <prize> [--winners 1]',
+    'g.end <giveaway_id>',
+    'g.reroll <giveaway_id>',
+  ],
   async execute(interaction) {
     return handleGiveawayCommand(interaction);
   },

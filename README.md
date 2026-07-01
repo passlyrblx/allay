@@ -48,6 +48,12 @@ Logged in as allay
 
 ## Commands
 
+Slash commands are registered automatically every time the bot starts. You can also run `npm run deploy` manually if you want to redeploy without starting the bot.
+
+- `.help` or `/help` shows every loaded slash command plus supported prefix examples.
+- `/giveaway create` or `g.create <duration> <prize> [--winners 1] [--title "Title"] [--description "Description"] [--image URL] [--message-entries]` creates a giveaway.
+- `/giveaway end` or `g.end <giveaway_id>` ends a giveaway.
+- `/giveaway reroll` or `g.reroll <giveaway_id>` rerolls winners.
 - `!ping` replies with `Pong!`.
 
 ## Security note

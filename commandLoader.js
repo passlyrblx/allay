@@ -1,5 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { REST, Routes } = require('discord.js');
+const { config } = require('./config');
 
 function walkJsFiles(directory) {
   if (!fs.existsSync(directory)) return [];
@@ -39,4 +41,25 @@ function loadCommands(commandsPath = path.join(__dirname, 'commands')) {
   return commands;
 }
 
-module.exports = { loadCommands, walkJsFiles };
+
+async function registerCommands(commands, applicationId = config.discord.clientId) {
+  const token = config.discord.botToken;
+  const clientId = applicationId || config.discord.clientId;
+  if (!token || !clientId) {
+    console.warn('[deploy] Skipped slash command registration: missing discord.botToken or application/client ID.');
+    return [];
+  }
+
+  const body = [...commands.values()].map((command) => command.data.toJSON());
+  const rest = new REST({ version: '10' }).setToken(token);
+  const route = config.discord.guildId
+    ? Routes.applicationGuildCommands(clientId, config.discord.guildId)
+    : Routes.applicationCommands(clientId);
+
+  console.log(`[deploy] Registering ${body.length} slash command(s) ${config.discord.guildId ? `to guild ${config.discord.guildId}` : 'globally'}...`);
+  const data = await rest.put(route, { body });
+  console.log(`[deploy] Registered ${data.length} slash command(s).`);
+  return data;
+}
+
+module.exports = { loadCommands, registerCommands, walkJsFiles };
