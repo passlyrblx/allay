@@ -15,13 +15,18 @@ async function deploy() {
     throw new Error('Add discord.clientId to config.json before running deploy.js.');
   }
 
-  const commands = [...loadCommands().values()].map((command) => command.data.toJSON());
+  const loadedCommands = loadCommands();
+  const commands = [...loadedCommands.values()].map((command) => command.data.toJSON());
+  if (!commands.length) {
+    throw new Error('No slash commands were loaded. Make sure the commands/ folder is deployed with the bot.');
+  }
   const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
   const route = DISCORD_GUILD_ID
     ? Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD_ID)
     : Routes.applicationCommands(DISCORD_CLIENT_ID);
 
-  console.log(`[deploy] Registering ${commands.length} slash command(s) ${DISCORD_GUILD_ID ? `to guild ${DISCORD_GUILD_ID}` : 'globally'}...`);
+  console.log(`[deploy] Registering ${commands.length} slash command(s): ${commands.map((command) => `/${command.name}`).join(', ')}`);
+  console.log(`[deploy] Target: ${DISCORD_GUILD_ID ? `guild ${DISCORD_GUILD_ID}` : 'global application commands'}.`);
   const data = await rest.put(route, { body: commands });
   console.log(`[deploy] Registered ${data.length} command(s).`);
 }

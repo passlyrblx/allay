@@ -34,7 +34,15 @@ A small Discord bot starter built for Node.js 20 with JavaScript and `discord.js
 
    Leave `discord.guildId` empty (`""`) if you want slash commands deployed globally.
 
-3. Start the bot:
+3. Register slash commands after setting `discord.botToken`, `discord.clientId`, and optionally `discord.guildId`:
+
+   ```bash
+   npm run deploy
+   ```
+
+   Put your server ID in `discord.guildId` for fast guild command updates while testing. Leave it empty only when you want global commands.
+
+4. Start the bot:
 
    ```bash
    npm start
@@ -49,6 +57,12 @@ Logged in as allay
 ## Commands
 
 - `!ping` replies with `Pong!`.
+- `/help` shows loaded slash commands and descriptions.
+- `/giveaway create` creates a persistent giveaway. Required options: `prize`, `duration`. Optional options: `winners`, `title`, `description`, `image`, `message_entries`, `entries_per_message`.
+- `/giveaway end` ends a giveaway by ID.
+- `/giveaway reroll` rerolls giveaway winners by ID.
+
+If slash commands do not appear in Discord, run `npm run deploy` again and check that the console says the commands were loaded from the `commands/` directory.
 
 ## Security note
 

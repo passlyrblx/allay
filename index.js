@@ -4,6 +4,7 @@ const { Client, GatewayIntentBits, Events } = require('discord.js');
 const { config } = require('./config');
 const { handleAiMessage } = require('./ai');
 const { loadCommands } = require('./commandLoader');
+const { handleWelcomeMember } = require('./welcome');
 const {
   handleGiveawayButton,
   handleGiveawayModal,
@@ -23,6 +24,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
   ],
 });
 
@@ -54,6 +56,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const payload = { content: 'Something went wrong while running that interaction.', ephemeral: true };
     if (interaction.deferred || interaction.replied) await interaction.followUp(payload).catch(console.error);
     else await interaction.reply(payload).catch(console.error);
+  }
+});
+
+client.on(Events.GuildMemberAdd, async (member) => {
+  try {
+    await handleWelcomeMember(member);
+  } catch (error) {
+    console.error('Failed to send welcome message:', error);
   }
 });
 
