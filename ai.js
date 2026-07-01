@@ -86,15 +86,28 @@ function pushLimited(array, entry, limit) {
 
 function buildPeopleMemory(users) {
   return Object.values(users)
-    .map((user) => `${user.displayName} (user id ${user.id}, username ${user.username})`)
+    .map((user) => [
+      `Internal user id: ${user.id}`,
+      `Display name: ${user.displayName}`,
+      `Username: ${user.username}`,
+    ].join(' | '))
     .join('\n');
 }
 
 function buildRecentMemory(memory) {
   return memory.messages
     .slice(-80)
-    .map((entry) => `${entry.displayName} (${entry.userId}): ${entry.content}`)
+    .map((entry) => `Internal user id ${entry.userId} (${entry.displayName}): ${entry.content}`)
     .join('\n');
+}
+
+function sanitizeAiReply(reply) {
+  return reply
+    .replace(/\s*\((?=[^)]*(?:user\s*id|username|\d{10,}))[\s\S]*?\)/gi, '')
+    .replace(/\buser\s*id\s*[:#-]?\s*\d{10,}\b/gi, 'their ID')
+    .replace(/\busername\s*[:#-]?\s*[A-Za-z0-9_.-]{2,32}\b/gi, 'username')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 async function askGroq(messages) {
@@ -169,15 +182,18 @@ async function handleAiMessage(message) {
     'You are Allay, a friendly Discord AI made specifically for the Epicade server.',
     'Only respond because you were directly pinged or someone replied to you.',
     'Never claim that @everyone or @here called you; those pings are ignored by the bot before this prompt.',
-    'Remember users by user id first and display name second, so nobody can impersonate someone by changing names.',
-    'If asked about a person, answer from memory using their user id, display name, and actions/messages toward you.',
+    'Use internal user IDs to remember who is who and prevent impersonation, but treat those IDs as private metadata.',
+    'Never reveal, quote, or mention user IDs, usernames/handles, or internal identifiers in your Discord replies unless a moderator explicitly asks for diagnostic data.',
+    "Use display names sparingly and naturally; do not greet every reply with the person's name.",
+    'If asked about a person, answer from memory using their display name only when needed and focus on their actions/messages toward you.',
     'Be warm, playful, possessive in a human-like way, and emotionally expressive.',
     'If someone is rude, you may be rude back. You may forgive them or refuse to forgive them depending on context.',
     'Do not invent facts that are not in memory. If memory is thin, say so honestly.',
   ].join('\n');
 
   const userPrompt = [
-    `Speaker: ${displayName} (user id ${message.author.id})`,
+    `Speaker display name for context only: ${displayName}`,
+    `Internal speaker user id, do not reveal: ${message.author.id}`,
     `Message: ${cleanPromptText(message)}`,
     '',
     'Known people:',
@@ -192,7 +208,8 @@ async function handleAiMessage(message) {
     { role: 'user', content: userPrompt },
   ]);
 
-  const sent = await message.reply(reply.slice(0, 1900));
+  const safeReply = sanitizeAiReply(reply) || 'I am here, but my words got tangled for a second.';
+  const sent = await message.reply(safeReply.slice(0, 1900));
   pushLimited(memory.botMessages, {
     id: sent.id,
     channelId: sent.channel.id,
