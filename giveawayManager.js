@@ -11,7 +11,11 @@ const {
 } = require('discord.js');
 
 const DATA_FILE = path.join(__dirname, 'data', 'giveaways.json');
+const MESSAGE_ENTRY_CHANNEL_ID = '1480233618696572958';
+const MESSAGE_ENTRY_COOLDOWN_MS = 3000;
+const MAX_TIMEOUT_MS = 2147483647;
 const timers = new Map();
+const messageEntryCooldowns = new Map();
 let store = { version: 1, giveaways: {} };
 let writeQueue = Promise.resolve();
 let clientRef;
@@ -50,6 +54,12 @@ function saveStore() {
   return writeQueue;
 }
 
+function getEntryStats(giveaway) {
+  const entries = Object.values(giveaway.entries || {}).reduce((sum, n) => sum + n, 0);
+  const users = Object.keys(giveaway.entries || {}).length;
+  return { entries, users };
+}
+
 function weightedPool(giveaway) {
   return Object.entries(giveaway.entries || {}).flatMap(([userId, count]) => Array(Math.max(0, count)).fill(userId));
 }
@@ -66,8 +76,7 @@ function pickWinners(giveaway) {
 }
 
 function buildEmbed(giveaway) {
-  const entryCount = Object.values(giveaway.entries || {}).reduce((sum, n) => sum + n, 0);
-  const uniqueCount = Object.keys(giveaway.entries || {}).length;
+  const { entries: entryCount, users: uniqueCount } = getEntryStats(giveaway);
   const embed = new EmbedBuilder()
     .setColor(giveaway.ended ? 0x808080 : 0x57f287)
     .setTitle(giveaway.title || 'Giveaway')
@@ -77,12 +86,14 @@ function buildEmbed(giveaway) {
       { name: 'Winners', value: String(giveaway.winnerCount), inline: true },
       { name: 'Ends', value: giveaway.ended ? 'Ended' : `<t:${Math.floor(new Date(giveaway.endAt).getTime() / 1000)}:R>`, inline: true },
       { name: 'Entries', value: `${entryCount} total from ${uniqueCount} user(s)`, inline: true },
-      { name: 'Message entries', value: giveaway.messageEntriesEnabled ? `${giveaway.messageEntryCount || 1} per message` : 'Off', inline: true },
+      { name: 'Message entries', value: giveaway.messageEntriesEnabled ? `1 per message in <#${giveaway.messageEntryChannelId || MESSAGE_ENTRY_CHANNEL_ID}> (3s cooldown)` : 'Off', inline: true },
     )
     .setFooter({ text: `Giveaway ID: ${giveaway.id}` })
     .setTimestamp(new Date(giveaway.endAt));
   if (giveaway.imageUrl) embed.setImage(giveaway.imageUrl);
-  if (giveaway.ended && giveaway.winners?.length) embed.addFields({ name: 'Winner user IDs', value: giveaway.winners.map((id) => `<@${id}> (${id})`).join('\n') });
+  if (giveaway.ended && giveaway.winners?.length) {
+    embed.addFields({ name: 'Winner(s)', value: giveaway.winners.map((id) => `<@${id}> with ${giveaway.entries?.[id] || 0} entr${(giveaway.entries?.[id] || 0) === 1 ? 'y' : 'ies'}`).join('\n') });
+  }
   return embed;
 }
 
@@ -105,15 +116,19 @@ async function refreshMessage(giveaway) {
 async function endGiveaway(id, reroll = false) {
   const giveaway = store.giveaways[id];
   if (!giveaway) return null;
+  if (giveaway.ended && !reroll) return giveaway;
+  clearTimeout(timers.get(giveaway.id));
+  timers.delete(giveaway.id);
   if (!reroll) giveaway.ended = true;
   giveaway.winners = pickWinners(giveaway);
   await saveStore();
   await refreshMessage(giveaway).catch(console.error);
   const channel = await clientRef.channels.fetch(giveaway.channelId).catch(() => null);
   if (channel) {
+    const { entries, users } = getEntryStats(giveaway);
     const text = giveaway.winners.length
-      ? `🎉 ${reroll ? 'Rerolled' : 'Giveaway ended'} for **${giveaway.prize}**! Winner user ID(s): ${giveaway.winners.map((id) => `<@${id}> (${id})`).join(', ')}`
-      : `Giveaway for **${giveaway.prize}** ended with no valid entries.`;
+      ? `🎉 ${reroll ? 'Rerolled' : 'Giveaway ended'} for **${giveaway.prize}**! ${users} user${users === 1 ? '' : 's'} participated with ${entries} total entr${entries === 1 ? 'y' : 'ies'}. ${giveaway.winners.map((id) => `<@${id}> won with ${giveaway.entries?.[id] || 0} entr${(giveaway.entries?.[id] || 0) === 1 ? 'y' : 'ies'}`).join('; ')}.`
+      : `Giveaway for **${giveaway.prize}** ended with ${users} user${users === 1 ? '' : 's'} participated and ${entries} total entr${entries === 1 ? 'y' : 'ies'}, but no valid winner could be picked.`;
     await channel.send({ content: text, allowedMentions: { users: giveaway.winners } }).catch(console.error);
   }
   return giveaway;
@@ -122,8 +137,15 @@ async function endGiveaway(id, reroll = false) {
 function schedule(giveaway) {
   clearTimeout(timers.get(giveaway.id));
   if (giveaway.ended) return;
-  const delay = Math.max(1000, new Date(giveaway.endAt).getTime() - Date.now());
-  timers.set(giveaway.id, setTimeout(() => endGiveaway(giveaway.id).catch(console.error), Math.min(delay, 2147483647)));
+  const delay = new Date(giveaway.endAt).getTime() - Date.now();
+  if (delay <= 0) {
+    timers.set(giveaway.id, setTimeout(() => endGiveaway(giveaway.id).catch(console.error), 1000));
+    return;
+  }
+  timers.set(giveaway.id, setTimeout(() => {
+    if (new Date(giveaway.endAt).getTime() > Date.now()) schedule(giveaway);
+    else endGiveaway(giveaway.id).catch(console.error);
+  }, Math.min(delay, MAX_TIMEOUT_MS)));
 }
 
 async function initializeGiveaways(client) {
@@ -149,12 +171,13 @@ async function createGiveaway(interaction) {
     title: interaction.options.getString('title') || '🎉 Giveaway',
     prize: interaction.options.getString('prize', true),
     description: interaction.options.getString('description') || 'Press Enter giveaway to join. More entries improve your chance, but do not guarantee a win.',
-    imageUrl: interaction.options.getString('image') || null,
+    imageUrl: interaction.options.getAttachment('image')?.url || interaction.options.getString('image_url') || null,
     winnerCount: interaction.options.getInteger('winners') || 1,
     endAt: new Date(Date.now() + durationMs).toISOString(),
     entries: {},
     messageEntriesEnabled: interaction.options.getBoolean('message_entries') || false,
-    messageEntryCount: interaction.options.getInteger('entries_per_message') || 1,
+    messageEntryChannelId: MESSAGE_ENTRY_CHANNEL_ID,
+    messageEntryCount: 1,
     ended: false,
     winners: [],
   };
@@ -202,8 +225,8 @@ async function handleGiveawayButton(interaction) {
       new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('title').setLabel('Title').setStyle(TextInputStyle.Short).setRequired(false).setValue(giveaway.title.slice(0, 100))),
       new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('prize').setLabel('Prize').setStyle(TextInputStyle.Short).setRequired(false).setValue(giveaway.prize.slice(0, 100))),
       new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description').setStyle(TextInputStyle.Paragraph).setRequired(false).setValue((giveaway.description || '').slice(0, 1000))),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('imageUrl').setLabel('Image URL').setStyle(TextInputStyle.Short).setRequired(false).setValue((giveaway.imageUrl || '').slice(0, 300))),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('settings').setLabel('Winners | msg entries on/off | entries/msg').setStyle(TextInputStyle.Short).setRequired(false).setValue(`${giveaway.winnerCount} | ${giveaway.messageEntriesEnabled ? 'on' : 'off'} | ${giveaway.messageEntryCount}`)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('imageUrl').setLabel('Image URL (optional)').setStyle(TextInputStyle.Short).setRequired(false).setValue((giveaway.imageUrl || '').slice(0, 300))),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('settings').setLabel('Winners | msg entries on/off').setStyle(TextInputStyle.Short).setRequired(false).setValue(`${giveaway.winnerCount} | ${giveaway.messageEntriesEnabled ? 'on' : 'off'}`)),
     );
     return interaction.showModal(modal);
   }
@@ -218,24 +241,35 @@ async function handleGiveawayModal(interaction) {
     const value = interaction.fields.getTextInputValue(key)?.trim();
     if (value || key === 'imageUrl') giveaway[key === 'imageUrl' ? 'imageUrl' : key] = value || null;
   }
-  const [winners, enabled, count] = interaction.fields.getTextInputValue('settings').split('|').map((x) => x.trim());
+  const [winners, enabled] = interaction.fields.getTextInputValue('settings').split('|').map((x) => x.trim());
   giveaway.winnerCount = Math.max(1, Number(winners) || giveaway.winnerCount);
   giveaway.messageEntriesEnabled = /^on|true|yes$/i.test(enabled);
-  giveaway.messageEntryCount = Math.max(1, Number(count) || giveaway.messageEntryCount);
+  giveaway.messageEntryChannelId = MESSAGE_ENTRY_CHANNEL_ID;
+  giveaway.messageEntryCount = 1;
   await saveStore(); await refreshMessage(giveaway);
   return interaction.reply({ content: 'Giveaway updated.', ephemeral: true });
 }
 
 async function handleMessageEntry(message) {
-  if (message.author.bot || !message.guildId) return;
+  if (message.author.bot || !message.guildId || message.channelId !== MESSAGE_ENTRY_CHANNEL_ID) return;
+  const now = Date.now();
+  const cooldownKey = `${message.guildId}:${message.channelId}:${message.author.id}`;
+  if ((messageEntryCooldowns.get(cooldownKey) || 0) > now) return;
+
   let changed = false;
   for (const giveaway of Object.values(store.giveaways)) {
-    if (!giveaway.ended && giveaway.messageEntriesEnabled && giveaway.channelId === message.channelId && message.id !== giveaway.messageId) {
-      giveaway.entries[message.author.id] = (giveaway.entries[message.author.id] || 0) + (giveaway.messageEntryCount || 1);
+    const entryChannelId = giveaway.messageEntryChannelId || MESSAGE_ENTRY_CHANNEL_ID;
+    if (!giveaway.ended && giveaway.messageEntriesEnabled && entryChannelId === message.channelId && message.id !== giveaway.messageId) {
+      giveaway.entries[message.author.id] = (giveaway.entries[message.author.id] || 0) + 1;
+      giveaway.messageEntryChannelId = MESSAGE_ENTRY_CHANNEL_ID;
+      giveaway.messageEntryCount = 1;
       changed = true;
     }
   }
-  if (changed) await saveStore();
+  if (changed) {
+    messageEntryCooldowns.set(cooldownKey, now + MESSAGE_ENTRY_COOLDOWN_MS);
+    await saveStore();
+  }
 }
 
 module.exports = { initializeGiveaways, handleGiveawayCommand, handleGiveawayButton, handleGiveawayModal, handleMessageEntry };
