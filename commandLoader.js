@@ -1,6 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const DEFAULT_COMMANDS_PATH = path.join(__dirname, 'commands');
+
 function walkJsFiles(directory) {
   if (!fs.existsSync(directory)) return [];
   const entries = fs.readdirSync(directory, { withFileTypes: true });
@@ -13,30 +15,50 @@ function walkJsFiles(directory) {
   return files;
 }
 
-function loadCommands(commandsPath = path.join(__dirname, 'commands')) {
+function getCommandJson(command) {
+  if (typeof command?.data?.toJSON !== 'function') return null;
+  try {
+    return command.data.toJSON();
+  } catch (error) {
+    console.error('[commands] Failed to read command JSON:', error);
+    return null;
+  }
+}
+
+function loadCommands(commandsPath = DEFAULT_COMMANDS_PATH) {
   const commands = new Map();
-  const commandFiles = walkJsFiles(commandsPath);
+  const resolvedCommandsPath = path.resolve(commandsPath);
+  const commandFiles = walkJsFiles(resolvedCommandsPath);
+
+  if (!fs.existsSync(resolvedCommandsPath)) {
+    console.warn(`[commands] Commands directory does not exist: ${resolvedCommandsPath}`);
+  } else if (!commandFiles.length) {
+    console.warn(`[commands] No .js command files found in: ${resolvedCommandsPath}`);
+  }
 
   for (const filePath of commandFiles) {
     const relativePath = path.relative(__dirname, filePath);
     try {
       delete require.cache[require.resolve(filePath)];
       const command = require(filePath);
-      if (!command?.data?.name || typeof command.execute !== 'function') {
-        console.warn(`[commands] Skipped ${relativePath}: missing data.name or execute().`);
+      const commandJson = getCommandJson(command);
+      const commandName = command?.data?.name || commandJson?.name;
+      const commandDescription = command?.data?.description || commandJson?.description || 'No description';
+
+      if (!commandName || typeof command.execute !== 'function') {
+        console.warn(`[commands] Skipped ${relativePath}: missing command name or execute().`);
         continue;
       }
 
-      commands.set(command.data.name, command);
-      const description = command.data.description || command.data.toJSON?.().description || 'No description';
-      console.log(`[commands] Loaded /${command.data.name} from ${relativePath} - ${description}`);
+      commands.set(commandName, command);
+      console.log(`[commands] Loaded /${commandName} from ${relativePath} - ${commandDescription}`);
     } catch (error) {
       console.error(`[commands] Failed to load ${relativePath}:`, error);
     }
   }
 
-  console.log(`[commands] ${commands.size}/${commandFiles.length} command file(s) loaded.`);
+  console.log(`[commands] ${commands.size}/${commandFiles.length} command file(s) loaded from ${resolvedCommandsPath}.`);
   return commands;
 }
 
-module.exports = { loadCommands, walkJsFiles };
+module.exports = { DEFAULT_COMMANDS_PATH, loadCommands, walkJsFiles };
