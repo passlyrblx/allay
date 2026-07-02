@@ -1,4 +1,6 @@
 const process = require('node:process');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { Client, GatewayIntentBits, Events } = require('discord.js');
 const { config } = require('./config');
@@ -14,6 +16,25 @@ const {
 } = require('./giveawayManager');
 
 const DISCORD_BOT_TOKEN = config.discord.botToken;
+
+function loadMinecraftSystem() {
+  const preferredPath = path.join(__dirname, 'mc.js');
+  const fallbackPath = path.join(__dirname, 'mc (1).js');
+
+  if (fs.existsSync(preferredPath)) {
+    return require(preferredPath);
+  }
+
+  if (fs.existsSync(fallbackPath)) {
+    console.warn('[minecraft] Loaded temporary mc (1).js. Rename it to mc.js before deployment.');
+    return require(fallbackPath);
+  }
+
+  console.warn('[minecraft] mc.js not found; Minecraft features are disabled.');
+  return null;
+}
+
+const minecraftSystem = loadMinecraftSystem();
 
 if (!DISCORD_BOT_TOKEN) {
   console.error('Missing Discord bot token. Add discord.botToken to config.json before running npm start.');
@@ -36,10 +57,15 @@ client.once(Events.ClientReady, async (readyClient) => {
   console.log(`Discord account: ${readyClient.user.tag}`);
   await registerCommands(client.commands, readyClient.application.id).catch((error) => console.error('[deploy] Startup slash command registration failed:', error));
   await initializeGiveaways(readyClient);
+  minecraftSystem?.initMinecraftSystem?.(readyClient);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    if (await minecraftSystem?.handleButtonInteraction?.(interaction)) {
+      return;
+    }
+
     if (interaction.isChatInputCommand()) {
       const command = client.commands.get(interaction.commandName);
       if (!command) return interaction.reply({ content: 'That command is not loaded.', ephemeral: true });
@@ -95,6 +121,9 @@ client.on(Events.MessageCreate, async (message) => {
 
   await handleMessageEntry(message);
 
+  const minecraftHandled = await minecraftSystem?.handlePrefixCommand?.(message);
+  if (minecraftHandled) return;
+
   const prefixHandled = await handlePrefixMessage(message);
   if (prefixHandled) return;
 
@@ -114,6 +143,7 @@ client.on(Events.Error, (error) => {
 
 process.on('SIGINT', async () => {
   console.log('Shutting down Allay bot...');
+  await minecraftSystem?.rconManager?.disconnect?.();
   client.destroy();
   process.exit(0);
 });
