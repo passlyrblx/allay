@@ -7,6 +7,7 @@ const { config } = require('./config');
 const { handleAiMessage } = require('./ai');
 const { loadCommands, registerCommands } = require('./commandLoader');
 const { handleLeaveMember, handleWelcomeMember } = require('./welcome');
+const { startPresenceRotation } = require('./presenceRotation');
 const {
   handleGiveawayButton,
   handleGiveawayModal,
@@ -57,6 +58,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   console.log(`Discord account: ${readyClient.user.tag}`);
   await registerCommands(client.commands, readyClient.application.id).catch((error) => console.error('[deploy] Startup slash command registration failed:', error));
   await initializeGiveaways(readyClient);
+  startPresenceRotation(readyClient);
   minecraftSystem?.initMinecraftSystem?.(readyClient);
 });
 
