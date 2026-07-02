@@ -1,5 +1,8 @@
 const process = require('node:process');
 
+const fs = require('node:fs');
+const path = require('node:path');
+
 const { Client, GatewayIntentBits, Events } = require('discord.js');
 const { config } = require('./config');
 const { handleAiMessage } = require('./ai');
@@ -14,6 +17,30 @@ const {
 } = require('./giveawayManager');
 
 const DISCORD_BOT_TOKEN = config.discord.botToken;
+
+function resolveOptionalModule(request) {
+  try {
+    require.resolve(request);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function loadMinecraftSystem() {
+  const minecraftFile = ['mc.js', 'mc (1).js'].find((fileName) => fs.existsSync(path.join(__dirname, fileName)));
+  if (!minecraftFile) return null;
+
+  const missingDependencies = ['rcon-client', '@google/generative-ai'].filter((dependency) => !resolveOptionalModule(dependency));
+  if (missingDependencies.length) {
+    console.warn(`[minecraft] Found ${minecraftFile}, but skipped loading because missing dependency/dependencies: ${missingDependencies.join(', ')}.`);
+    return null;
+  }
+
+  return require(path.join(__dirname, minecraftFile));
+}
+
+const minecraftSystem = loadMinecraftSystem();
 
 if (!DISCORD_BOT_TOKEN) {
   console.error('Missing Discord bot token. Add discord.botToken to config.json before running npm start.');
@@ -36,10 +63,13 @@ client.once(Events.ClientReady, async (readyClient) => {
   console.log(`Discord account: ${readyClient.user.tag}`);
   await registerCommands(client.commands, readyClient.application.id).catch((error) => console.error('[deploy] Startup slash command registration failed:', error));
   await initializeGiveaways(readyClient);
+  minecraftSystem?.initMinecraftSystem?.(readyClient);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    if (await minecraftSystem?.handleButtonInteraction?.(interaction)) return;
+
     if (interaction.isChatInputCommand()) {
       const command = client.commands.get(interaction.commandName);
       if (!command) return interaction.reply({ content: 'That command is not loaded.', ephemeral: true });
@@ -70,6 +100,8 @@ async function handlePrefixMessage(message) {
     await command.executePrefix(message, client.commands);
     return true;
   }
+
+  if (await minecraftSystem?.handlePrefixCommand?.(message)) return true;
 
   return handleGiveawayPrefixCommand(message);
 }
