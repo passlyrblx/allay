@@ -2,12 +2,13 @@ const process = require('node:process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { Client, GatewayIntentBits, Events } = require('discord.js');
+const { Client, GatewayIntentBits, Events, Partials } = require('discord.js');
 const { config } = require('./config');
 const { handleAiMessage } = require('./ai');
 const { loadCommands, registerCommands } = require('./commandLoader');
 const { handleLeaveMember, handleWelcomeMember } = require('./welcome');
 const { startPresenceRotation } = require('./presenceRotation');
+const { handleInviteFilter, handleMessageDelete, handleMessageUpdate, logCommandExecution } = require('./case');
 const {
   handleGiveawayButton,
   handleGiveawayModal,
@@ -43,6 +44,7 @@ if (!DISCORD_BOT_TOKEN) {
 }
 
 const client = new Client({
+  partials: [Partials.Message, Partials.Channel],
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
@@ -69,6 +71,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     if (interaction.isChatInputCommand()) {
+      await logCommandExecution(interaction);
       const command = client.commands.get(interaction.commandName);
       if (!command) return interaction.reply({ content: 'That command is not loaded.', ephemeral: true });
       return command.execute(interaction);
@@ -118,8 +121,27 @@ client.on(Events.GuildMemberRemove, async (member) => {
   }
 });
 
+client.on(Events.MessageDelete, async (message) => {
+  try {
+    await handleMessageDelete(message);
+  } catch (error) {
+    console.error('Failed to log deleted message:', error);
+  }
+});
+
+client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
+  try {
+    await handleMessageUpdate(oldMessage, newMessage);
+  } catch (error) {
+    console.error('Failed to log edited message:', error);
+  }
+});
+
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
+
+  const inviteFiltered = await handleInviteFilter(message);
+  if (inviteFiltered) return;
 
   await handleMessageEntry(message);
 
