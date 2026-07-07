@@ -8,7 +8,6 @@ const { handleAiMessage } = require('./ai');
 const { loadCommands, registerCommands } = require('./commandLoader');
 const { handleLeaveMember, handleWelcomeMember } = require('./welcome');
 const { startPresenceRotation } = require('./presenceRotation');
-const { handleInviteFilter, handleMessageDelete, handleMessageUpdate, logCommandExecution } = require('./case');
 const {
   handleGiveawayButton,
   handleGiveawayModal,
@@ -71,7 +70,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     if (interaction.isChatInputCommand()) {
-      await logCommandExecution(interaction);
       const command = client.commands.get(interaction.commandName);
       if (!command) return interaction.reply({ content: 'That command is not loaded.', ephemeral: true });
       return command.execute(interaction);
@@ -121,27 +119,8 @@ client.on(Events.GuildMemberRemove, async (member) => {
   }
 });
 
-client.on(Events.MessageDelete, async (message) => {
-  try {
-    await handleMessageDelete(message);
-  } catch (error) {
-    console.error('Failed to log deleted message:', error);
-  }
-});
-
-client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
-  try {
-    await handleMessageUpdate(oldMessage, newMessage);
-  } catch (error) {
-    console.error('Failed to log edited message:', error);
-  }
-});
-
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
-
-  const inviteFiltered = await handleInviteFilter(message);
-  if (inviteFiltered) return;
 
   await handleMessageEntry(message);
 
